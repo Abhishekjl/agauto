@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Action, ActionResult, PageState } from "@agauto/shared";
-import { clearHighlights, highlightFields, runAction, scanActiveTab } from "../lib/tab";
+import { captureAnnotatedScreenshot, clearHighlights, highlightFields, runAction, scanActiveTab } from "../lib/tab";
 import { getStoredDocument } from "../lib/storage";
 import { getProfileText, textToFacts } from "../lib/profile";
 import { buildHints, matchFieldsToFacts } from "../lib/match";
@@ -85,7 +85,7 @@ export function useAgent() {
             });
             if (FILL_ACTIONS.has(action.type)) failedFill = { action, message: msg };
           }
-          if (action.type === "click") rescan = true;
+          if (action.type === "click" || action.type === "pick_option") rescan = true;
         }
         engine.current.addResults(results);
         // A field the agent tried to FILL failed — stop here so the user can
@@ -106,8 +106,14 @@ export function useAgent() {
         }
         if (rescan) {
           const ps = await scanActiveTab();
+          const navigated = hostOf(ps.url) !== hostOf(lastState.current?.url ?? "");
+          const urlChanged = ps.url !== lastState.current?.url;
           lastState.current = ps;
-          engine.current.addPageState(ps);
+          // Re-screenshot only on real navigation (new page/step) — not after every
+          // field fill, which would add 300–500 ms of latency per step for no benefit.
+          const shot = urlChanged ? await tryScreenshot(ps) : undefined;
+          engine.current.addPageState(ps, shot);
+          if (navigated) sessionHost.current = hostOf(ps.url);
         }
         step = await engine.current.advance();
         continue;
@@ -179,6 +185,8 @@ export function useAgent() {
         /* embeddings optional */
       }
 
+      const screenshot = await tryScreenshot(pageState);
+
       engine.current.start({
         profile,
         goal,
@@ -186,6 +194,7 @@ export function useAgent() {
         hints,
         hasDocument: !!doc,
         pageState,
+        screenshot,
       });
       await drive(await engine.current.advance());
     } catch (e) {
@@ -363,6 +372,7 @@ const FILL_ACTIONS = new Set<Action["type"]>([
   "type_text",
   "select_option",
   "set_checkbox",
+  "pick_option",
   "upload_document",
   "upload_file",
 ]);
@@ -373,6 +383,8 @@ function actionValue(a: Action): string {
       return a.text;
     case "select_option":
       return a.value ?? a.label ?? "";
+    case "pick_option":
+      return a.option_label;
     case "set_checkbox":
       return a.checked ? "Yes" : "No";
     case "upload_document":
@@ -393,11 +405,22 @@ function describe(a: Action): string {
       return `${a.checked ? "check" : "uncheck"} #${a.index}`;
     case "click":
       return `click #${a.index}`;
+    case "pick_option":
+      return `pick "${a.option_label}" → #${a.index}`;
     case "scroll_to":
       return `scroll to #${a.index}`;
     case "upload_file":
       return `upload ${a.filename} → #${a.index}`;
     case "upload_document":
       return `attach document → #${a.index}`;
+  }
+}
+
+/** Capture an annotated screenshot; returns undefined on any failure (non-fatal). */
+async function tryScreenshot(ps: PageState): Promise<string | undefined> {
+  try {
+    return await captureAnnotatedScreenshot(ps.elements, ps.viewport);
+  } catch {
+    return undefined;
   }
 }

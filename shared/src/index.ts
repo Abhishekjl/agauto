@@ -71,6 +71,8 @@ export interface InteractiveElement {
   role?: string;
   /** current text value, or contenteditable/button/link text */
   value?: string;
+  /** for combobox — whether the dropdown list is currently open */
+  ariaExpanded?: boolean;
   /** for checkbox / radio */
   checked?: boolean;
   /** radio group name */
@@ -93,6 +95,8 @@ export interface PageState {
   scannedAt: number;
   elementCount: number;
   elements: InteractiveElement[];
+  /** CSS-pixel dimensions of the visible viewport at scan time */
+  viewport: { width: number; height: number };
 }
 
 /* ------------------------------------------------------------------ */
@@ -103,6 +107,7 @@ export type ContentRequest =
   | { type: "SCAN_PAGE" }
   | { type: "HIGHLIGHT_FIELDS"; indices: number[] }
   | { type: "CLEAR_HIGHLIGHT" }
+  | { type: "SCROLL_TOP" }
   | { type: "PICK_FIELD" }
   | { type: "REGION_PICK" };
 
@@ -131,6 +136,8 @@ export type Action =
   | { type: "select_option"; index: number; value?: string; label?: string }
   | { type: "set_checkbox"; index: number; checked: boolean }
   | { type: "click"; index: number }
+  /** atomic custom-dropdown: opens the trigger then clicks the matching option */
+  | { type: "pick_option"; index: number; option_label: string }
   | {
       type: "upload_file";
       index: number;

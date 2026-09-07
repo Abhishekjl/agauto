@@ -21,8 +21,15 @@ chrome.runtime.onMessage.addListener(
         return true;
       }
       if (msg?.type === "PERFORM_ACTION") {
-        sendResponse({ type: "ACTION_RESULT", result: performAction(msg.action) });
-        return true;
+        performAction(msg.action)
+          .then((result) => sendResponse({ type: "ACTION_RESULT", result }))
+          .catch((err) =>
+            sendResponse({
+              type: "ACTION_ERROR",
+              error: err instanceof Error ? err.message : String(err),
+            })
+          );
+        return true; // keep message channel open for the async response
       }
       if (msg?.type === "HIGHLIGHT_FIELDS") {
         highlightFields(msg.indices);
@@ -31,6 +38,11 @@ chrome.runtime.onMessage.addListener(
       }
       if (msg?.type === "CLEAR_HIGHLIGHT") {
         clearHighlights();
+        sendResponse({ type: "OK" });
+        return true;
+      }
+      if (msg?.type === "SCROLL_TOP") {
+        window.scrollTo({ top: 0, behavior: "instant" });
         sendResponse({ type: "OK" });
         return true;
       }

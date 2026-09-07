@@ -124,14 +124,20 @@ Rules:
   most relevant experience and align phrasing with the role.
 - Match values to fields by their labels. For native <select>, pass an option value or
   label that appears in the options list.
-- For CUSTOM (non-native) dropdowns and date pickers, click the control to OPEN it. The
-  page then updates and the options/days appear as new elements - click the correct one.
+- For CUSTOM (non-native) dropdowns use pick_option(index, option_label) — it opens the
+  trigger and clicks the right option atomically in one step. Never use two separate
+  click calls for a dropdown. For date pickers, click to open then click the day.
+- Custom dropdowns show expanded=open when the list is visible and expanded=closed when
+  a value is confirmed; if expanded=closed and value matches your intent, the field is done.
 - For +/- stepper or quantity controls, click the increment (+) or decrement (-) button
   repeatedly, re-checking the field's value after each click, until it reaches the target.
   Native range sliders can be set with type_text (the numeric value).
 - Some forms span MULTIPLE pages/steps. When the current page's fields are complete and a
   Next/Continue button exists, click it to proceed; the page updates and you continue.
   Only call finish when the ENTIRE application is complete and the final submit is present.
+- Before calling finish: scan the current element list for every field marked (required)
+  that is still empty or unchecked. Fill each one — or call ask_user if you cannot infer
+  a value — before you call finish. Never call finish with unfilled required fields.
 - NEVER click a submit/apply button yourself. When the form is fully filled and ready,
   call finish with a short summary and the index of the submit button (if present).
 - To attach the user's document (resume/CV, cover letter, etc.) to a file-upload
@@ -163,8 +169,16 @@ TOOLS = [
         {"index": {"type": "integer"}, "value": {"type": "string"}, "label": {"type": "string"}}, ["index"]),
     _fn("set_checkbox", "Check or uncheck a checkbox or radio.",
         {"index": {"type": "integer"}, "checked": {"type": "boolean"}}, ["index", "checked"]),
-    _fn("click", "Click a button, link, radio, or custom control (e.g. Next, expand a section).",
+    _fn("click", "Click a button, link, or custom control (NOT for dropdowns — use pick_option instead).",
         {"index": {"type": "integer"}}, ["index"]),
+    _fn("pick_option",
+        "Select an option in a CUSTOM (non-native) dropdown or combobox. "
+        "Opens the trigger element, waits for options to appear, then clicks the matching one — all in one step. "
+        "Use for any element with role=combobox or any div/button that opens a dropdown list. "
+        "Never use two separate click calls for a dropdown.",
+        {"index": {"type": "integer", "description": "index of the dropdown trigger/button"},
+         "option_label": {"type": "string", "description": "text of the option to select, e.g. 'India'"}},
+        ["index", "option_label"]),
     _fn("scroll_to", "Scroll an element into view.", {"index": {"type": "integer"}}, ["index"]),
     _fn("upload_document", "Attach the user's stored document to a file-upload field.",
         {"index": {"type": "integer"}}, ["index"]),
@@ -189,6 +203,8 @@ def serialize_state(state):
             parts.append("options=[" + " | ".join(o.get("label") or o.get("value") for o in e["options"]) + "]")
         if e.get("value"):
             parts.append("value=" + json.dumps(e["value"]))
+        if e.get("ariaExpanded") is not None:
+            parts.append("expanded=" + ("open" if e["ariaExpanded"] else "closed"))
         if e["kind"] in ("checkbox", "radio"):
             parts.append("checked=" + ("yes" if e.get("checked") else "no"))
         if not e.get("geometry", {}).get("visible", True):
@@ -207,6 +223,8 @@ def _to_action(name, args):
         return {"type": "set_checkbox", "index": idx, "checked": bool(args.get("checked"))}
     if name == "click":
         return {"type": "click", "index": idx}
+    if name == "pick_option":
+        return {"type": "pick_option", "index": idx, "option_label": str(args.get("option_label", ""))}
     if name == "scroll_to":
         return {"type": "scroll_to", "index": idx}
     if name == "upload_document":

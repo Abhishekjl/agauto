@@ -6,8 +6,10 @@ import type { Action, ActionResult } from "@agauto/shared";
  *
  * Every mutation dispatches the events frameworks listen for (native value
  * setter + input/change), so React/Vue/Angular register the change.
+ *
+ * Returns a Promise so pick_option can await DOM mutations without blocking.
  */
-export function performAction(action: Action): ActionResult {
+export async function performAction(action: Action): Promise<ActionResult> {
   const el = findByIndex(action.index);
   if (!el) {
     return fail(action, "element not found — re-scan the page (DOM may have changed)");
@@ -24,6 +26,8 @@ export function performAction(action: Action): ActionResult {
       return setCheckbox(el, action);
     case "click":
       return click(el, action);
+    case "pick_option":
+      return pickOption(el, action);
     case "upload_file":
       return uploadFile(el, action);
     case "scroll_to":
@@ -147,6 +151,80 @@ function click(
   // Report what was clicked so the agent can catch a mis-click (stale index,
   // adjacent option — e.g. "Indonesia" when it meant "India").
   return ok(action, clickedText(el));
+}
+
+/**
+ * Atomic custom-dropdown handler: opens the trigger, waits for options to
+ * appear in the DOM (including portals rendered at document.body level), then
+ * clicks the best-matching option — all in one content-script turn so the LLM
+ * never has to reason about intermediate open/closed state.
+ */
+async function pickOption(
+  el: HTMLElement,
+  action: Extract<Action, { type: "pick_option" }>
+): Promise<ActionResult> {
+  el.scrollIntoView({ block: "center" });
+  el.click(); // open the dropdown
+
+  const option = await waitForOption(action.option_label, 2500);
+  if (!option) {
+    return fail(
+      action,
+      `option "${action.option_label}" not found after opening dropdown — ` +
+        "verify the label exactly matches one of the available choices"
+    );
+  }
+
+  flash(option);
+  option.scrollIntoView({ block: "nearest" });
+  option.click();
+
+  // Return the exact text of the option we clicked so the agent can verify.
+  return ok(action, (option.textContent || "").trim().slice(0, 120) || action.option_label);
+}
+
+/**
+ * Wait up to timeoutMs for a visible option element matching label to appear
+ * anywhere in the document (handles portal/overlay rendering patterns used by
+ * React Select, Ant Design, Headless UI, etc.).
+ */
+function waitForOption(label: string, timeoutMs: number): Promise<HTMLElement | null> {
+  const OPTION_SEL =
+    '[role="option"],[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
+  const norm = label.trim().toLowerCase();
+
+  function findOption(): HTMLElement | null {
+    let partial: HTMLElement | null = null;
+    for (const node of Array.from(document.querySelectorAll(OPTION_SEL))) {
+      const candidate = node as HTMLElement;
+      const r = candidate.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue; // not rendered yet
+      const text = (candidate.textContent || "").trim().toLowerCase();
+      if (text === norm) return candidate; // exact match — done
+      if (!partial && (text.includes(norm) || norm.includes(text))) partial = candidate;
+    }
+    return partial;
+  }
+
+  // Options might already be in the DOM (e.g. opened before this call).
+  const immediate = findOption();
+  if (immediate) return Promise.resolve(immediate);
+
+  return new Promise<HTMLElement | null>((resolve) => {
+    const observer = new MutationObserver(() => {
+      const found = findOption();
+      if (found) {
+        observer.disconnect();
+        clearTimeout(timer);
+        resolve(found);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = window.setTimeout(() => {
+      observer.disconnect();
+      resolve(findOption()); // last chance
+    }, timeoutMs);
+  });
 }
 
 function clickedText(el: HTMLElement): string | undefined {

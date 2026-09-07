@@ -20,12 +20,24 @@ export interface StartParams {
   hints?: string;
   hasDocument: boolean;
   pageState: PageState;
+  /** annotated screenshot data URL — numbered overlays on each element */
+  screenshot?: string;
 }
 
 const SYSTEM_PROMPT = `You are AgAuto, an agent that fills out web forms on the user's behalf.
 
-You are given the user's profile and a list of the page's interactive elements,
-each with a numeric index (#N). Use the tools to fill the form ONE action at a time.
+You are given the user's profile, a list of the page's interactive elements each with a
+numeric index (#N), and a screenshot of the page with those index numbers overlaid on
+each element as purple badges.
+
+IMPORTANT — use the screenshot as your primary source of truth for what each field
+actually says. The DOM-extracted labels in the element list can be wrong (e.g. both
+radio buttons in a group may show the same label). In the screenshot you can read the
+actual rendered text next to each numbered element — use that to understand the question
+and pick the correct option. The element list tells you types, required status, and
+current values; the screenshot tells you what the labels actually say.
+
+Use the tools to fill the form ONE action at a time.
 
 Rules:
 - READ EACH QUESTION LITERALLY and answer exactly what it asks — nothing else.
@@ -45,20 +57,23 @@ Rules:
 - Follow the user's Instructions exactly. If a Job description is provided, tailor
   open-ended answers to it — emphasize the most relevant experience.
 - Match values to fields by labels. For native <select>, pass an option value/label
-  from its options. For CUSTOM dropdowns/date pickers, click to OPEN, then click the
-  option/day that appears. For +/- steppers, click the +/- button repeatedly, checking
-  the value each time. Native range sliders can be set with type_text.
+  from its options. For CUSTOM (non-native) dropdowns use pick_option(index, option_label) —
+  it opens the trigger and clicks the right option atomically in one step; never use
+  two separate click calls for a dropdown. For date pickers, click to open then click
+  the day. For +/- steppers, click the +/- button repeatedly checking the value each time.
+  Native range sliders can be set with type_text.
 - Element indices are RE-ASSIGNED on every page rescan. NEVER reuse an index from an
-  older page listing — act only on the LATEST "Updated page" state. Click results
-  include the clicked element's text: check it is what you intended (option lists
-  have near-identical neighbors, e.g. "India" vs "Indonesia"). After choosing a
-  dropdown option, VERIFY in the updated page state that the field now displays the
-  intended value; if it shows the wrong one, correct it before moving on.
+  older page listing — act only on the LATEST "Updated page" state. Custom dropdowns
+  show expanded=open when the list is visible and expanded=closed when a value is
+  confirmed; if expanded=closed and value matches your intent, the field is done.
 - Answer EVERY required radio-group question. Custom radios/checkboxes may show a
   tiny size or unusual geometry because the real input is styled by its label —
   set_checkbox handles them; do not skip the question.
 - Some forms span MULTIPLE pages: when a page is done and a Next/Continue button exists,
   click it. Only call finish when the ENTIRE application is complete.
+- Before calling finish: scan the current element list for every field marked (required)
+  that is still empty or unchecked. Fill each one — or call ask_user if you cannot infer
+  a value — before you call finish. Never call finish with unfilled required fields.
 - NEVER click submit yourself — call finish with a short summary and the submit button's
   index (if present). The user approves before anything is submitted.
 - To attach the user's document to a file-upload field, call upload_document.
@@ -87,8 +102,18 @@ const TOOLS: Tool[] = [
     { index: { type: "integer" }, value: { type: "string" }, label: { type: "string" } }, ["index"]),
   fn("set_checkbox", "Check or uncheck a checkbox or radio.",
     { index: { type: "integer" }, checked: { type: "boolean" } }, ["index", "checked"]),
-  fn("click", "Click a button, link, radio, or custom control.",
+  fn("click", "Click a button, link, radio, or custom control (NOT for dropdowns — use pick_option instead).",
     { index: { type: "integer" } }, ["index"]),
+  fn("pick_option",
+    "Select an option in a CUSTOM (non-native) dropdown or combobox. " +
+    "Opens the trigger element, waits for options to appear, then clicks the matching one — all in one step. " +
+    "Use this for any element with role=combobox or any div/button that opens a dropdown list. " +
+    "Never use two separate click calls for a dropdown.",
+    {
+      index: { type: "integer", description: "index of the dropdown trigger/button (the combobox)" },
+      option_label: { type: "string", description: "text of the option to select, e.g. 'India'" },
+    },
+    ["index", "option_label"]),
   fn("scroll_to", "Scroll an element into view.", { index: { type: "integer" } }, ["index"]),
   fn("upload_document", "Attach the user's stored document to a file-upload field.",
     { index: { type: "integer" } }, ["index"]),
@@ -106,6 +131,7 @@ function serializeState(s: PageState): string {
     if (e.options?.length)
       parts.push(`options=[${e.options.map((o) => o.label || o.value).join(" | ")}]`);
     if (e.value) parts.push(`value=${JSON.stringify(e.value)}`);
+    if (e.ariaExpanded !== undefined) parts.push(`expanded=${e.ariaExpanded ? "open" : "closed"}`);
     if (e.kind === "checkbox" || e.kind === "radio")
       parts.push(`checked=${e.checked ? "yes" : "no"}`);
     if (!e.geometry.visible) parts.push("<hidden>");
@@ -130,6 +156,8 @@ function toAction(name: string, args: Record<string, unknown>): Action | null {
       return { type: "set_checkbox", index, checked: Boolean(args.checked) };
     case "click":
       return { type: "click", index };
+    case "pick_option":
+      return { type: "pick_option", index, option_label: String(args.option_label ?? "") };
     case "scroll_to":
       return { type: "scroll_to", index };
     case "upload_document":
@@ -157,15 +185,23 @@ export class AgentEngine {
   private pendingId: string | null = null;
 
   start(p: StartParams): void {
-    const content =
+    const text =
       `My profile:\n${p.profile}\n\n` +
       (p.hasDocument ? "A document file is attached; upload it via upload_document.\n\n" : "") +
       `Instructions: ${p.goal}\n\n` +
       (p.jobDescription?.trim() ? `Job description to tailor answers to:\n${p.jobDescription.trim()}\n\n` : "") +
       (p.hints?.trim()
-        ? `Semantic field→fact suggestions (fuzzy auto-matches — they are often WRONG for open-ended questions; use one only if it truly answers the actual question):\n${p.hints.trim()}\n\n`
+        ? `Semantic field→fact suggestions (fuzzy auto-matches — often WRONG for open-ended questions; use only if it truly answers the actual question):\n${p.hints.trim()}\n\n`
         : "") +
-      `Current page:\n${serializeState(p.pageState)}`;
+      `Page elements (indices match the numbered overlays in the screenshot above):\n${serializeState(p.pageState)}`;
+
+    const content = p.screenshot
+      ? [
+          { type: "text", text },
+          { type: "image_url", image_url: { url: p.screenshot } },
+        ]
+      : text;
+
     this.messages = [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content },
@@ -231,8 +267,15 @@ export class AgentEngine {
     this.pendingId = null;
   }
 
-  addPageState(s: PageState): void {
-    this.messages.push({ role: "user", content: `Updated page:\n${serializeState(s)}` });
+  addPageState(s: PageState, screenshot?: string): void {
+    const text = `Updated page (indices match the numbered overlays in the screenshot):\n${serializeState(s)}`;
+    const content = screenshot
+      ? [
+          { type: "text", text },
+          { type: "image_url", image_url: { url: screenshot } },
+        ]
+      : text;
+    this.messages.push({ role: "user", content });
   }
 
   /** Free-form user message (e.g. after the user fixed a failed field manually). */

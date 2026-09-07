@@ -60,6 +60,7 @@ export function scanPage(): PageState {
     scannedAt: Date.now(),
     elementCount: elements.length,
     elements,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
   };
 }
 
@@ -149,10 +150,11 @@ function describe(
     // would never see it otherwise.
     const gq = groupQuestion(el);
     if (gq) {
-      item.label =
+      const optionText =
         item.label && item.label.toLowerCase() !== gq.toLowerCase()
-          ? `${gq} — ${item.label}`
-          : gq;
+          ? item.label          // already a distinct per-option label
+          : optionLabel(el);    // fallback: sibling text, value attr, aria-label
+      item.label = optionText ? `${gq} — ${optionText}` : gq;
     }
   } else if (el.isContentEditable) {
     item.value = (el.textContent || "").trim().slice(0, 500);
@@ -161,12 +163,46 @@ function describe(
   } else if (tag === "a" || tag === "button" || item.role === "button") {
     item.value = (el.textContent || "").trim().slice(0, 200);
   } else if (item.role === "combobox") {
-    // Custom dropdown: expose its currently-displayed text so the agent can
-    // verify the selection actually shows what it intended.
+    // Custom dropdown: expose displayed text and open/closed state so the
+    // agent can confirm a selection without re-clicking the trigger.
     item.value = (el.textContent || "").trim().slice(0, 200) || undefined;
+    const expanded = el.getAttribute("aria-expanded");
+    if (expanded !== null) item.ariaExpanded = expanded === "true";
   }
 
   return item;
+}
+
+/**
+ * The per-option label for a radio/checkbox when getLabel() only returned the group
+ * question text. Tries, in order:
+ *   1. Sibling visible text node / span / div right next to the input
+ *   2. aria-label on the input itself
+ *   3. The input's value attribute (e.g. "yes", "no", "true")
+ */
+function optionLabel(el: HTMLElement): string | undefined {
+  // 1. Next sibling text (common pattern: <input type=radio><span>Yes</span>)
+  let sib = el.nextSibling;
+  while (sib) {
+    if (sib.nodeType === Node.TEXT_NODE) {
+      const t = sib.textContent?.trim();
+      if (t && t.length > 0) return t.slice(0, 80);
+    } else if (sib instanceof HTMLElement) {
+      const tag = sib.tagName.toLowerCase();
+      // stop at another interactive element — that's a different field
+      if (tag === "input" || tag === "select" || tag === "textarea" || tag === "button") break;
+      const t = (sib.textContent || "").trim();
+      if (t && t.length > 0) return t.slice(0, 80);
+    }
+    sib = sib.nextSibling;
+  }
+  // 2. aria-label
+  const aria = el.getAttribute("aria-label")?.trim();
+  if (aria) return aria.slice(0, 80);
+  // 3. value attribute (e.g. value="yes" / value="no")
+  const val = (el as HTMLInputElement).value?.trim();
+  if (val && val !== "on") return val.slice(0, 80);
+  return undefined;
 }
 
 /**
