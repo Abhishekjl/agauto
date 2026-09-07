@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgAuto Advanced Test — custom dropdown + multi-step</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1e293b; }
+      h1 { font-size: 1.4rem; }
+      .step-badge { color: #64748b; font-size: 0.85rem; margin-bottom: 1rem; }
+      .field { margin: 1rem 0; display: flex; flex-direction: column; gap: 0.3rem; }
+      label { font-weight: 600; font-size: 0.9rem; }
+      input, textarea { padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+      textarea { min-height: 90px; }
+      .row { display: flex; gap: 0.5rem; align-items: center; }
+      .row input { width: auto; }
+      button { background: #4f46e5; color: white; border: 0; padding: 0.6rem 1.1rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+      button.secondary { background: #e2e8f0; color: #1e293b; }
+      .hidden { display: none; }
+      .ok { background: #dcfce7; color: #166534; padding: 0.6rem; border-radius: 6px; margin-top: 1rem; }
+
+      /* custom (non-native) dropdown */
+      .combo { position: relative; }
+      .combo-btn { width: 100%; text-align: left; background: white; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.5rem; font: inherit; font-weight: 400; }
+      .combo-list { list-style: none; margin: 0.25rem 0 0; padding: 0.25rem; border: 1px solid #cbd5e1; border-radius: 6px; position: absolute; background: white; width: 100%; z-index: 5; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+      .combo-list li { padding: 0.4rem 0.5rem; border-radius: 4px; cursor: pointer; }
+      .combo-list li:hover { background: #eef2ff; }
+    </style>
+  </head>
+  <body>
+    <h1>Senior Engineer — Application</h1>
+    <div class="step-badge" id="badge">Step 1 of 2</div>
+
+    <form id="app" onsubmit="return false;">
+      <!-- STEP 1 -->
+      <section id="step1">
+        <div class="field">
+          <label for="fn">Full name *</label>
+          <input id="fn" name="full_name" required placeholder="Full name" />
+        </div>
+        <div class="field">
+          <label for="em">Email *</label>
+          <input id="em" name="email" type="email" required placeholder="you@example.com" />
+        </div>
+
+        <!-- custom dropdown: not a native <select> -->
+        <div class="field">
+          <label id="exp-label">Experience level *</label>
+          <div class="combo">
+            <button type="button" id="exp-btn" class="combo-btn" role="combobox"
+                    aria-haspopup="listbox" aria-expanded="false" aria-labelledby="exp-label"
+                    data-value="">Select level…</button>
+            <ul id="exp-list" class="combo-list" role="listbox" hidden>
+              <li role="option" data-value="junior">Junior</li>
+              <li role="option" data-value="mid">Mid-level</li>
+              <li role="option" data-value="senior">Senior</li>
+              <li role="option" data-value="lead">Lead / Staff</li>
+            </ul>
+          </div>
+        </div>
+
+        <button type="button" id="next">Next →</button>
+      </section>
+
+      <!-- STEP 2 -->
+      <section id="step2" class="hidden">
+        <div class="field">
+          <label for="salary">Desired salary *</label>
+          <input id="salary" name="salary" required placeholder="$" />
+        </div>
+        <div class="field">
+          <label for="notice">Notice period</label>
+          <input id="notice" name="notice_period" placeholder="e.g. 2 weeks" />
+        </div>
+        <div class="field">
+          <label for="why">Why do you want this role? *</label>
+          <textarea id="why" name="cover_letter" required placeholder="Tell us…"></textarea>
+        </div>
+        <div class="field row">
+          <input type="checkbox" id="agree" name="agree" />
+          <label for="agree">I agree to the terms *</label>
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="back">← Back</button>
+          <button type="button" id="submit">Submit application</button>
+        </div>
+      </section>
+    </form>
+
+    <div id="done" class="ok hidden">✅ Submitted! (local test form — nothing sent anywhere)</div>
+
+    <script>
+      // custom dropdown behavior
+      const btn = document.getElementById("exp-btn");
+      const list = document.getElementById("exp-list");
+      btn.addEventListener("click", () => {
+        const willOpen = list.hidden;
+        list.hidden = !willOpen;
+        btn.setAttribute("aria-expanded", String(willOpen));
+      });
+      list.querySelectorAll('[role="option"]').forEach((opt) => {
+        opt.addEventListener("click", () => {
+          btn.textContent = opt.textContent;
+          btn.dataset.value = opt.dataset.value;
+          list.hidden = true;
+          btn.setAttribute("aria-expanded", "false");
+        });
+      });
+
+      // multi-step navigation
+      const step1 = document.getElementById("step1");
+      const step2 = document.getElementById("step2");
+      const badge = document.getElementById("badge");
+      document.getElementById("next").addEventListener("click", () => {
+        step1.classList.add("hidden");
+        step2.classList.remove("hidden");
+        badge.textContent = "Step 2 of 2";
+        window.scrollTo(0, 0);
+      });
+      document.getElementById("back").addEventListener("click", () => {
+        step2.classList.add("hidden");
+        step1.classList.remove("hidden");
+        badge.textContent = "Step 1 of 2";
+      });
+      document.getElementById("submit").addEventListener("click", () => {
+        document.getElementById("app").classList.add("hidden");
+        document.getElementById("done").classList.remove("hidden");
+        badge.textContent = "";
+      });
+    </script>
+  </body>
+</html>

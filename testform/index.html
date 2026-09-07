@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgAuto Test Application Form</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1e293b; }
+      h1 { font-size: 1.4rem; }
+      .field { margin: 1rem 0; display: flex; flex-direction: column; gap: 0.3rem; }
+      label { font-weight: 600; font-size: 0.9rem; }
+      input, select, textarea { padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+      textarea { min-height: 90px; }
+      .row { display: flex; gap: 0.5rem; align-items: center; }
+      .row input { width: auto; }
+      .spacer { height: 900px; display: grid; place-items: center; color: #94a3b8; border: 1px dashed #e2e8f0; margin: 1rem 0; }
+      button { background: #4f46e5; color: white; border: 0; padding: 0.7rem 1.2rem; border-radius: 6px; font-weight: 600; cursor: pointer; }
+      .ok { background: #dcfce7; color: #166534; padding: 0.6rem; border-radius: 6px; margin-top: 1rem; display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Software Engineer — Application</h1>
+    <form id="app" onsubmit="event.preventDefault(); document.getElementById('done').style.display='block'; window.scrollTo(0,0);">
+      <div class="field">
+        <label for="fn">First name *</label>
+        <input id="fn" name="first_name" required placeholder="First name" />
+      </div>
+      <div class="field">
+        <label for="ln">Last name *</label>
+        <input id="ln" name="last_name" required placeholder="Last name" />
+      </div>
+      <div class="field">
+        <label for="em">Email *</label>
+        <input id="em" name="email" type="email" required placeholder="you@example.com" />
+      </div>
+      <div class="field">
+        <label for="ph">Phone</label>
+        <input id="ph" name="phone" type="tel" placeholder="+1 …" />
+      </div>
+      <div class="field">
+        <label for="country">Country *</label>
+        <select id="country" name="country" required>
+          <option value="">Select…</option>
+          <option value="US">United States</option>
+          <option value="CA">Canada</option>
+          <option value="UK">United Kingdom</option>
+          <option value="IN">India</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Are you authorized to work in this country? *</label>
+        <div class="row"><input type="radio" id="auth_y" name="work_auth" value="yes" /><label for="auth_y">Yes</label></div>
+        <div class="row"><input type="radio" id="auth_n" name="work_auth" value="no" /><label for="auth_n">No</label></div>
+      </div>
+
+      <div class="spacer">↓ scroll down — these fields are off-screen (tests full-form perception) ↓</div>
+
+      <div class="field">
+        <label for="resume">Resume</label>
+        <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx,.txt" />
+      </div>
+      <div class="field">
+        <label for="salary">Desired salary</label>
+        <input id="salary" name="salary" placeholder="$" />
+      </div>
+      <div class="field">
+        <label for="notice">Notice period</label>
+        <input id="notice" name="notice_period" placeholder="e.g. 2 weeks" />
+      </div>
+      <div class="field">
+        <label for="why">Why do you want this role? *</label>
+        <textarea id="why" name="cover_letter" required placeholder="Tell us…"></textarea>
+      </div>
+      <div class="field row">
+        <input type="checkbox" id="agree" name="agree" />
+        <label for="agree">I agree to the terms *</label>
+      </div>
+
+      <button type="submit">Submit application</button>
+    </form>
+    <div id="done" class="ok">✅ Submitted! (this is the local test form — nothing was sent anywhere)</div>
+  </body>
+</html>

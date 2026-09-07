@@ -1,0 +1,21 @@
+{
+  "name": "agauto",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Agentic form-filling Chrome extension — monorepo root",
+  "workspaces": [
+    "shared",
+    "backend",
+    "extension"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev -w @agauto/backend",
+    "start:backend": "npm run start -w @agauto/backend",
+    "dev:extension": "npm run dev -w @agauto/extension",
+    "build:extension": "npm run build -w @agauto/extension",
+    "test:content": "esbuild tests-e2e/entry.ts --bundle --format=iife --outfile=tests-e2e/bundle.js && node tests-e2e/run-tests.js"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

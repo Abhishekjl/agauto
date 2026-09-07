@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>AgAuto fix tests</title>
+<style>
+  /* Custom radio/checkbox pattern: real input hidden, label styled */
+  .fancy input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .fancy .dot { display: inline-block; width: 16px; height: 16px; border: 2px solid #333; border-radius: 50%; margin-right: 6px; }
+  .fancy input:checked + .dot { background: #4f46e5; }
+  .block { margin: 16px; padding: 8px; }
+</style>
+</head>
+<body>
+
+<!-- 1. Custom radios: hidden input, visible styled label (the "skipped radio" bug) -->
+<div class="block" id="q1">
+  <div>1. Are you interested in this opportunity?</div>
+  <label class="fancy"><input type="radio" name="interested" value="yes" id="radio-yes"><span class="dot"></span>Yes, I am interested</label>
+  <label class="fancy"><input type="radio" name="interested" value="no" id="radio-no"><span class="dot"></span>No, I am not interested</label>
+</div>
+
+<!-- 2. Framework-controlled checkbox that cancels programmatic clicks (React-style revert) -->
+<div class="block">
+  <label><input type="checkbox" id="controlled-cb"> I agree to the terms</label>
+</div>
+<script>
+  document.getElementById("controlled-cb").addEventListener("click", (e) => e.preventDefault());
+</script>
+
+<!-- 3. Custom dropdown: combobox trigger + options (the India/Indonesia bug) -->
+<div class="block">
+  <div>Country of residence</div>
+  <div role="combobox" id="country-combo" tabindex="0">Select country</div>
+  <div id="country-options">
+    <div role="option" id="opt-india" onclick="pick('India')">India</div>
+    <div role="option" id="opt-indonesia" onclick="pick('Indonesia')">Indonesia</div>
+  </div>
+</div>
+<script>
+  function pick(v) { document.getElementById("country-combo").textContent = v; }
+</script>
+
+<!-- 4. Native select with near-identical neighbors -->
+<div class="block">
+  <label for="country-native">Country (native)</label>
+  <select id="country-native">
+    <option value="">--</option>
+    <option value="IN">India</option>
+    <option value="ID">Indonesia</option>
+  </select>
+</div>
+
+<!-- 5. Div-based question label (the "languages" bug): no <label>, question in sibling div -->
+<div class="block">
+  <div>10. List the languages you write &amp; speak and your level of proficiency. (Beginner - limited ability to write, Intermediate - can write with some difficulty, Advanced - occasional errors in writing, Fluent - can write with ease). Example answer: Spanish - (Writing - Advanced; Spoken - Fluent)</div>
+  <div><textarea id="langs-field"></textarea></div>
+</div>
+
+<!-- 6. Label isolation: field must NOT steal the previous question's text -->
+<section class="block">
+  <div><div>Question A?</div><input id="field-a" name="question_a"></div>
+  <div><input id="field-b" name="custom_field"></div>
+</section>
+
+<!-- 7. aria-describedby fallback -->
+<div class="block">
+  <span id="desc-help">Enter your notice period in days</span>
+  <input id="notice-field" aria-describedby="desc-help">
+</div>
+
+</body>
+</html>
