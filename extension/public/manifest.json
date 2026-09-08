@@ -8,7 +8,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["sidePanel", "storage", "unlimitedStorage", "activeTab", "scripting"],
+  "permissions": ["sidePanel", "storage", "unlimitedStorage", "activeTab", "scripting", "debugger"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js"

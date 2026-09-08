@@ -94,23 +94,27 @@ function selectOption(
   return ok(action, el.value);
 }
 
-function setCheckbox(
+async function setCheckbox(
   el: HTMLElement,
   action: Extract<Action, { type: "set_checkbox" }>
-): ActionResult {
+): Promise<ActionResult> {
   const current = isChecked(el);
   if (current !== action.checked) {
     el.scrollIntoView({ block: "center" });
-    // Custom controls hide the real input and style the label — click that.
+
+    // Try 1: JS click on the best visible target.
     checkboxClickTarget(el).click();
-    // Framework-controlled input that ignored the click — set checked natively.
-    if (isChecked(el) !== action.checked && el instanceof HTMLInputElement) {
-      const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked");
-      if (desc?.set) desc.set.call(el, action.checked);
-      else el.checked = action.checked;
-      dispatch(el, "input");
-      dispatch(el, "change");
+
+    // Try 2: if JS click didn't register, fire a real CDP hardware mouse event.
+    // React/Vue always respond to these. We wait 150 ms afterward so the framework
+    // has time to process the event and commit its re-render before we read state —
+    // without the wait we'd read el.checked before React updates the DOM.
+    if (isChecked(el) !== action.checked) {
+      await cdpClick(el);
+      await new Promise<void>((r) => window.setTimeout(r, 150));
     }
+    // NOTE: no native-property fallback — setting el.checked directly causes a false
+    // positive because React overrides it on the next render, making ok=true lie.
   }
   const after = isChecked(el);
   return {
@@ -120,6 +124,59 @@ function setCheckbox(
     value: String(after),
     message: after === action.checked ? undefined : "state did not change",
   };
+}
+
+/**
+ * Fire a real CDP mouse click at the best visible coordinates for el.
+ * Runs in the content script but routes through the background service worker
+ * which holds the chrome.debugger permission.
+ */
+async function cdpClick(el: HTMLElement): Promise<void> {
+  const coords = cdpClickCoords(el);
+  if (!coords) return;
+  await (chrome.runtime.sendMessage({ type: "CDP_CLICK", x: coords.x, y: coords.y }) as Promise<unknown>).catch(() => {});
+}
+
+/**
+ * Find the center viewport-coordinates of the best visible click target for a
+ * (possibly hidden) input. Priority order:
+ *   1. el itself (handles visible custom checkboxes/radios — div/span with role=checkbox)
+ *   2. label/for link (handles hidden <input> with an associated <label>)
+ *   3. next sibling (hidden input + adjacent visible span/div pattern)
+ *   4. first visible ancestor (last resort)
+ */
+function cdpClickCoords(el: HTMLElement): { x: number; y: number } | null {
+  function center(r: DOMRect) {
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  // 1. The element itself — catches visible custom checkbox/radio divs.
+  const elRect = el.getBoundingClientRect();
+  if (elRect.width > 0 && elRect.height > 0) return center(elRect);
+
+  // 2. Label target for hidden <input> (wrapping <label> or <label for=id>).
+  const target = checkboxClickTarget(el);
+  if (target !== el) {
+    const r = target.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return center(r);
+  }
+
+  // 3. Next sibling — often the visible styled checkbox/radio span.
+  const sib = el.nextElementSibling as HTMLElement | null;
+  if (sib) {
+    const r = sib.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return center(r);
+  }
+
+  // 4. First visible ancestor.
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.body) {
+    const r = node.getBoundingClientRect();
+    if (r.width > 4 && r.height > 4) return center(r);
+    node = node.parentElement;
+  }
+
+  return null;
 }
 
 /** The visible click target for a checkbox/radio whose input is hidden by CSS. */

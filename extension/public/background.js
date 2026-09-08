@@ -36,6 +36,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handleEmbed(msg).then(sendResponse).catch((e) => sendResponse({ error: errStr(e) }));
     return true;
   }
+  if (msg && msg.type === "CDP_CLICK") {
+    handleCdpClick(msg).then(sendResponse).catch((e) => sendResponse({ error: errStr(e) }));
+    return true;
+  }
   return undefined;
 });
 
@@ -65,6 +69,23 @@ async function handleChat(msg) {
   const message = data.choices && data.choices[0] && data.choices[0].message;
   if (!message) return { error: "empty model response" };
   return { message, model: data.model };
+}
+
+async function handleCdpClick({ x, y }) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return { error: "no active tab" };
+  const target = { tabId: tab.id };
+  // Attach — ignore error if already attached from a prior call.
+  await chrome.debugger.attach(target, "1.3").catch(() => {});
+  try {
+    const base = { x: Math.round(x), y: Math.round(y), button: "left", clickCount: 1, modifiers: 0 };
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { ...base, type: "mouseMoved" });
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { ...base, type: "mousePressed" });
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { ...base, type: "mouseReleased" });
+    return { ok: true };
+  } finally {
+    await chrome.debugger.detach(target).catch(() => {});
+  }
 }
 
 async function handleEmbed(msg) {

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Action, ActionResult, PageState } from "@agauto/shared";
 import { captureAnnotatedScreenshot, clearHighlights, highlightFields, runAction, scanActiveTab } from "../lib/tab";
 import { getStoredDocument } from "../lib/storage";
@@ -23,6 +23,7 @@ export function useAgent() {
   const [pending, setPending] = useState<Pending>(null);
 
   const engine = useRef(new AgentEngine());
+  const pendingRef = useRef<Pending>(null);
   const filled = useRef<Set<number>>(new Set());
   const filledDetails = useRef<Map<number, { label: string; value: string }>>(new Map());
   const lastState = useRef<PageState | null>(null);
@@ -31,6 +32,34 @@ export function useAgent() {
   const aborted = useRef(false);
   const paused = useRef(false);
   const resumeStep = useRef<EngineStep | null>(null);
+
+  // Keep pendingRef in sync so tab-change listeners can read current value
+  // without needing to re-register on every render.
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
+
+  // Clear a stale "done" prompt when the user navigates to a different page.
+  useEffect(() => {
+    function check(url: string | undefined) {
+      if (pendingRef.current?.kind !== "done") return;
+      if (url !== lastState.current?.url) setPending(null);
+    }
+    function onTabUpdate(
+      _id: number,
+      info: chrome.tabs.TabChangeInfo,
+      tab: chrome.tabs.Tab
+    ) {
+      if (info.status === "complete" && tab.active) check(tab.url);
+    }
+    function onTabActivated() {
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => check(tab?.url));
+    }
+    chrome.tabs.onUpdated.addListener(onTabUpdate);
+    chrome.tabs.onActivated.addListener(onTabActivated);
+    return () => {
+      chrome.tabs.onUpdated.removeListener(onTabUpdate);
+      chrome.tabs.onActivated.removeListener(onTabActivated);
+    };
+  }, []);
 
   const append = (line: string) => setLog((l) => [...l, line]);
 
