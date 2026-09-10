@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgAuto — Privacy Policy</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1e293b; line-height: 1.7; }
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+    h2 { font-size: 1.05rem; font-weight: 600; margin-top: 2rem; }
+    p, li { font-size: 0.95rem; color: #334155; }
+    ul { padding-left: 1.4rem; }
+    .meta { font-size: 0.85rem; color: #64748b; margin-bottom: 2rem; }
+    a { color: #4f46e5; }
+  </style>
+</head>
+<body>
+  <h1>AgAuto — Privacy Policy</h1>
+  <p class="meta">Last updated: September 2026</p>
+
+  <p>
+    AgAuto is a Chrome extension that helps users automatically fill web forms using their
+    resume or profile. This policy explains what data the extension handles and how.
+  </p>
+
+  <h2>Data We Do Not Collect</h2>
+  <p>
+    AgAuto has no servers and collects no data. We do not receive, store, or process any
+    information about you, your browsing activity, or the forms you fill.
+  </p>
+
+  <h2>Data Stored Locally on Your Device</h2>
+  <ul>
+    <li>Your profile text and uploaded resume/document</li>
+    <li>Your goal/instructions and job description text</li>
+    <li>Extension settings (API key, model name, endpoint URL)</li>
+    <li>A local history of past form fill sessions</li>
+  </ul>
+  <p>
+    All of the above is stored exclusively in Chrome's local extension storage on your own
+    device. It is never transmitted to AgAuto or any third party, except as described below.
+  </p>
+
+  <h2>AI Model API Calls</h2>
+  <p>
+    When you trigger a form fill, AgAuto sends the following data directly from your browser
+    to the AI model API endpoint you configure in Settings (for example, OpenAI's API):
+  </p>
+  <ul>
+    <li>Your profile text</li>
+    <li>A description of the form fields visible on the current page</li>
+    <li>Any job description text you have provided</li>
+  </ul>
+  <p>
+    This network call goes directly from your browser to your chosen provider — AgAuto is
+    not involved. Please review the privacy policy of the AI provider you choose to use
+    (e.g., <a href="https://openai.com/policies/privacy-policy" target="_blank">OpenAI Privacy Policy</a>).
+  </p>
+
+  <h2>Permissions Explained</h2>
+  <ul>
+    <li><strong>activeTab / scripting</strong> — to read form fields and fill them on the page you are viewing.</li>
+    <li><strong>storage / unlimitedStorage</strong> — to save your profile and resume locally.</li>
+    <li><strong>sidePanel</strong> — to display the AgAuto panel beside your active tab.</li>
+    <li><strong>debugger</strong> — to simulate hardware-level mouse events so that React, Vue, and Angular controlled form elements register input correctly. This permission is not used to intercept network traffic or capture any other browser data.</li>
+  </ul>
+
+  <h2>Children's Privacy</h2>
+  <p>AgAuto is not directed at children under 13 and does not knowingly collect data from them.</p>
+
+  <h2>Changes to This Policy</h2>
+  <p>
+    If this policy changes, the updated version will be posted at this URL with a revised date.
+    Continued use of the extension after changes constitutes acceptance of the new policy.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions? Open an issue on our
+    <a href="https://github.com/your-username/agauto/issues" target="_blank">GitHub repository</a>
+    or email us at <a href="mailto:your@email.com">your@email.com</a>.
+  </p>
+</body>
+</html>
