@@ -17,7 +17,7 @@ import { matchFieldsToFacts, type FieldMatch } from "../lib/match";
 const DEFAULT_GOAL = "Fill out this application form using my profile.";
 
 export default function AgentPanel() {
-  const { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume } =
+  const { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume, reset } =
     useAgent();
   const [profile, setProfile] = useState("");
   const [goal, setGoal] = useState(DEFAULT_GOAL);
@@ -286,6 +286,15 @@ export default function AgentPanel() {
             >
               {matching ? "…" : "Preview"}
             </button>
+            {(log.length > 0 || pending !== null) && (
+              <button
+                onClick={reset}
+                title="Reset session (keeps form fields filled)"
+                className="rounded-lg bg-sky-500 hover:bg-sky-600 text-white px-3 shadow-sm transition flex items-center justify-center"
+              >
+                <RefreshIcon />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -481,6 +490,16 @@ export default function AgentPanel() {
         </div>
       )}
     </div>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M23 4v6h-6" />
+      <path d="M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
   );
 }
 

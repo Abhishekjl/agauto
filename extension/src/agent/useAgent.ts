@@ -363,7 +363,24 @@ export function useAgent() {
     void drive(step);
   }
 
-  return { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume };
+  /** Reset agent state (log, pending, engine) without touching already-filled form fields. */
+  function reset() {
+    aborted.current = true; // stop any in-flight drive() loop
+    setLog([]);
+    setPending(null);
+    setStatus("idle");
+    engine.current = new AgentEngine();
+    filled.current = new Set();
+    filledDetails.current = new Map();
+    aborted.current = false;
+    paused.current = false;
+    resumeStep.current = null;
+    lastState.current = null;
+    sessionHost.current = null;
+    void clearHighlights().catch(() => {});
+  }
+
+  return { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume, reset };
 }
 
 /** Execute an action — translating upload_document to an upload_file with stored bytes. */
