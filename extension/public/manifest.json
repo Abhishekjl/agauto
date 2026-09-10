@@ -9,6 +9,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["sidePanel", "storage", "unlimitedStorage", "activeTab", "scripting", "tabs", "debugger"],
+  "host_permissions": ["https://*/*", "http://*/*"],
   "background": {
     "service_worker": "background.js"
   },
