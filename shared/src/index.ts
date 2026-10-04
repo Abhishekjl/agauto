@@ -109,22 +109,27 @@ export type ContentRequest =
   | { type: "CLEAR_HIGHLIGHT" }
   | { type: "SCROLL_TOP" }
   | { type: "PICK_FIELD" }
-  | { type: "REGION_PICK" };
+  | { type: "REGION_PICK" }
+  | { type: "TEXT_PICK" }
+  | { type: "GET_PAGE_TEXT" };
 
 export interface PickedField {
   index: number;
   label: string;
 }
 
-/** Broadcast (chrome.runtime) from the content script when the user picks field(s). */
+/** Broadcast (chrome.runtime) from the content script when the user picks field(s) or text. */
 export type PickMessage =
   | { type: "FIELD_PICKED"; index: number; label: string }
   | { type: "FIELDS_PICKED"; fields: PickedField[] }
-  | { type: "FIELD_PICK_CANCELLED" };
+  | { type: "FIELD_PICK_CANCELLED" }
+  | { type: "TEXT_PICKED"; text: string }
+  | { type: "TEXT_PICK_CANCELLED" };
 
 export type ContentResponse =
   | { type: "SCAN_RESULT"; state: PageState }
   | { type: "SCAN_ERROR"; error: string }
+  | { type: "PAGE_TEXT"; text: string }
   | { type: "OK" };
 
 /* ------------------------------------------------------------------ */

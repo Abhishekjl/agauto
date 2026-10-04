@@ -6,7 +6,7 @@ import type {
 } from "@agauto/shared";
 import { scanPage } from "./scan";
 import { clearHighlights, highlightFields, performAction } from "./actions";
-import { startPick, startRegionPick } from "./pick";
+import { startPick, startRegionPick, startTextPick } from "./pick";
 
 type Incoming = ContentRequest | ActionRequest;
 type Outgoing = ContentResponse | ActionResponse;
@@ -54,6 +54,16 @@ chrome.runtime.onMessage.addListener(
       if (msg?.type === "REGION_PICK") {
         startRegionPick();
         sendResponse({ type: "OK" });
+        return true;
+      }
+      if (msg?.type === "TEXT_PICK") {
+        startTextPick();
+        sendResponse({ type: "OK" });
+        return true;
+      }
+      if (msg?.type === "GET_PAGE_TEXT") {
+        const text = (document.body?.innerText ?? "").slice(0, 12000).trim();
+        sendResponse({ type: "PAGE_TEXT", text });
         return true;
       }
     } catch (err) {

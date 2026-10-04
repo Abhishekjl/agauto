@@ -224,3 +224,107 @@ function collectFields(
 function intersects(a: ScreenRect, b: ScreenRect): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
+
+/* ------------------------- text region pick ------------------------- */
+
+/**
+ * Drag a rectangle over any page text (e.g. a job description) and extract
+ * the plain text within that area. Used to capture a JD for resume tailoring.
+ */
+export function startTextPick(): void {
+  cancelPick();
+
+  const overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;inset:0;z-index:2147483647;cursor:text;background:rgba(16,185,129,0.04);";
+  const box = document.createElement("div");
+  box.style.cssText =
+    "position:fixed;border:2px dashed #10b981;background:rgba(16,185,129,0.10);display:none;pointer-events:none;z-index:2147483647;";
+  document.body.appendChild(overlay);
+  document.body.appendChild(box);
+
+  let x0 = 0, y0 = 0, dragging = false;
+
+  const rectFrom = (ax: number, ay: number, bx: number, by: number): ScreenRect => ({
+    left: Math.min(ax, bx), top: Math.min(ay, by),
+    right: Math.max(ax, bx), bottom: Math.max(ay, by),
+  });
+
+  const drawBox = (e: MouseEvent) => {
+    const r = rectFrom(x0, y0, e.clientX, e.clientY);
+    box.style.left = r.left + "px"; box.style.top = r.top + "px";
+    box.style.width = r.right - r.left + "px"; box.style.height = r.bottom - r.top + "px";
+  };
+
+  const onDown = (e: MouseEvent) => { dragging = true; x0 = e.clientX; y0 = e.clientY; box.style.display = "block"; drawBox(e); e.preventDefault(); };
+  const onMove = (e: MouseEvent) => { if (dragging) drawBox(e); };
+  const onUp = (e: MouseEvent) => {
+    if (!dragging) return;
+    dragging = false;
+    const sel = rectFrom(x0, y0, e.clientX, e.clientY);
+    teardown();
+    if (sel.right - sel.left < 5 && sel.bottom - sel.top < 5) {
+      send({ type: "TEXT_PICK_CANCELLED" });
+      return;
+    }
+    const text = extractTextFromRegion(sel);
+    if (text) send({ type: "TEXT_PICKED", text });
+    else send({ type: "TEXT_PICK_CANCELLED" });
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") { teardown(); send({ type: "TEXT_PICK_CANCELLED" }); }
+  };
+
+  overlay.addEventListener("mousedown", onDown, true);
+  window.addEventListener("mousemove", onMove, true);
+  window.addEventListener("mouseup", onUp, true);
+  document.addEventListener("keydown", onKey, true);
+
+  function teardown() {
+    overlay.remove(); box.remove();
+    window.removeEventListener("mousemove", onMove, true);
+    window.removeEventListener("mouseup", onUp, true);
+    document.removeEventListener("keydown", onKey, true);
+    cleanup = null;
+  }
+  cleanup = teardown;
+}
+
+/**
+ * Extract plain text from all visible text nodes whose bounding rect intersects sel.
+ * Primary: caretRangeFromPoint for natural reading-order text.
+ * Fallback: TreeWalker over all text nodes.
+ */
+function extractTextFromRegion(sel: ScreenRect): string {
+  try {
+    // caretRangeFromPoint is Chrome-only; the standard replacement isn't in Chrome yet.
+    // Cast through any to drop the deprecation marker from the Document typedef.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = document as any;
+    const start = d.caretRangeFromPoint(sel.left, sel.top) as Range | null;
+    const end = d.caretRangeFromPoint(sel.right, sel.bottom) as Range | null;
+    if (start && end) {
+      const range = document.createRange();
+      range.setStart(start.startContainer, start.startOffset);
+      range.setEnd(end.startContainer, end.startOffset);
+      const text = range.toString().trim();
+      if (text.length > 10) return text;
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: walk all text nodes
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    const t = (node.textContent || "").trim();
+    if (!t) continue;
+    const range = document.createRange();
+    range.selectNode(node);
+    const r = range.getBoundingClientRect();
+    if (intersects({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }, sel)) {
+      parts.push(t);
+    }
+  }
+  return parts.join(" ").trim();
+}

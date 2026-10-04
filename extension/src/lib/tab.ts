@@ -38,6 +38,12 @@ async function send<T>(msg: ContentRequest | ActionRequest): Promise<T> {
   }
 }
 
+export async function getPageText(): Promise<string> {
+  const res = await send<ContentResponse>({ type: "GET_PAGE_TEXT" });
+  if (res?.type === "PAGE_TEXT") return res.text;
+  throw new Error("Could not read page text.");
+}
+
 export async function scanActiveTab(): Promise<PageState> {
   const res = await send<ContentResponse>({ type: "SCAN_PAGE" });
   if (res?.type === "SCAN_RESULT") return res.state;
@@ -125,6 +131,27 @@ export async function captureAnnotatedScreenshot(
   }
 
   return canvas.toDataURL("image/png");
+}
+
+/** Drag a rectangle over any page text; resolve with the extracted text (or null if cancelled). */
+export function pickTextRegion(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const listener = (msg: unknown) => {
+      const m = msg as { type?: string; text?: string };
+      if (m?.type === "TEXT_PICKED") {
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(m.text ?? null);
+      } else if (m?.type === "TEXT_PICK_CANCELLED") {
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve(null);
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    send({ type: "TEXT_PICK" }).catch(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      resolve(null);
+    });
+  });
 }
 
 /** Drag a rectangle over the page; resolve with the fields inside it (or null if cancelled). */

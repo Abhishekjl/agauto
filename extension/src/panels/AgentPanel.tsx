@@ -11,8 +11,16 @@ import {
   setStoredDocument,
 } from "../lib/storage";
 import { appendFact, getProfileText, setProfileText, textToFacts } from "../lib/profile";
-import { pickRegion, scanActiveTab } from "../lib/tab";
+import { pickRegion, getPageText, scanActiveTab } from "../lib/tab";
 import { matchFieldsToFacts, type FieldMatch } from "../lib/match";
+import { tailorProfileToJD } from "../lib/tailor";
+import { generateTailoredDocx } from "../lib/docx";
+import {
+  getTailoredResumes,
+  addTailoredResume,
+  deleteTailoredResume,
+  type TailoredResume,
+} from "../lib/storage";
 
 const DEFAULT_GOAL = "Fill out this application form using my profile.";
 
@@ -32,12 +40,17 @@ export default function AgentPanel() {
   const [matching, setMatching] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [tailoring, setTailoring] = useState(false);
+  const [tailoredResumes, setTailoredResumes] = useState<TailoredResume[]>([]);
+  const [selectedTailoredId, setSelectedTailoredId] = useState<string | null>(null);
+  const [previewResume, setPreviewResume] = useState<TailoredResume | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getProfileText().then(setProfile);
     getDocumentMeta().then((m) => setDocName(m?.name ?? null));
+    getTailoredResumes().then(setTailoredResumes);
     chrome.storage.local.get([GOAL_KEY, JOB_DESCRIPTION_KEY, AUTOSUBMIT_KEY]).then((v) => {
       if (typeof v[GOAL_KEY] === "string") setGoal(v[GOAL_KEY] as string);
       if (typeof v[JOB_DESCRIPTION_KEY] === "string")
@@ -155,6 +168,52 @@ export default function AgentPanel() {
     }
   }
 
+  async function captureJD() {
+    setTailoring(true);
+    try {
+      const jdText = await getPageText();
+      if (!jdText) return;
+      const currentProfile = await getProfileText();
+      const result = await tailorProfileToJD(currentProfile, jdText);
+      const { dataBase64, filename } = await generateTailoredDocx(
+        result.tailoredProfile,
+        result.jobTitle,
+        result.company
+      );
+      const entry = await addTailoredResume({
+        jobTitle: result.jobTitle,
+        company: result.company,
+        tailoredProfile: result.tailoredProfile,
+        doc: {
+          name: filename,
+          mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          dataBase64,
+        },
+      });
+      setTailoredResumes((prev) => [entry, ...prev]);
+      setSelectedTailoredId(entry.id);
+    } catch (err) {
+      console.error("[agauto] tailoring failed", err);
+    } finally {
+      setTailoring(false);
+    }
+  }
+
+  function downloadDocx(r: TailoredResume) {
+    const bytes = Uint8Array.from(atob(r.doc.dataBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: r.doc.mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = r.doc.name; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function removeTailored(id: string) {
+    await deleteTailoredResume(id);
+    setTailoredResumes((prev) => prev.filter((r) => r.id !== id));
+    if (selectedTailoredId === id) setSelectedTailoredId(null);
+  }
+
   const busy = status === "running" || status === "paused";
 
   return (
@@ -171,6 +230,14 @@ export default function AgentPanel() {
           >
             {docBusy ? "Reading…" : docName ? "Replace" : "Upload"}
           </button>
+          <button
+            onClick={() => void captureJD()}
+            disabled={tailoring || busy}
+            title="Capture this page as a job description and tailor your resume to it"
+            className="rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-medium px-2.5 py-1.5 disabled:opacity-50 transition"
+          >
+            {tailoring ? "Tailoring…" : "Capture JD"}
+          </button>
           <input
             ref={fileInput}
             type="file"
@@ -181,6 +248,67 @@ export default function AgentPanel() {
         </div>
         {docNote && <p className="text-[11px] text-slate-500 dark:text-slate-400">{docNote}</p>}
       </div>
+
+      {tailoredResumes.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-3 shadow-sm ring-1 ring-slate-900/[0.02] dark:ring-white/[0.03] flex flex-col gap-2">
+          <div className="text-xs font-medium text-slate-600 dark:text-slate-300">Tailored Resumes</div>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/40">
+              <input
+                type="radio"
+                name="tailored"
+                checked={selectedTailoredId === null}
+                onChange={() => setSelectedTailoredId(null)}
+                className="accent-indigo-600"
+              />
+              <span className="text-xs text-slate-500 dark:text-slate-400 italic">Base resume (no tailoring)</span>
+            </label>
+            {tailoredResumes.map((r) => (
+              <label key={r.id} className={`flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 transition ${selectedTailoredId === r.id ? "bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30" : "hover:bg-slate-50 dark:hover:bg-slate-700/40"}`}>
+                <input
+                  type="radio"
+                  name="tailored"
+                  checked={selectedTailoredId === r.id}
+                  onChange={() => setSelectedTailoredId(r.id)}
+                  className="accent-violet-600 shrink-0"
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200 block truncate">
+                    {r.jobTitle}{r.company ? ` — ${r.company}` : ""}
+                  </span>
+                  <span className="text-[10px] text-slate-400">{new Date(r.createdAt).toLocaleDateString()}</span>
+                </span>
+                <button
+                  onClick={(e) => { e.preventDefault(); setPreviewResume(r); }}
+                  className="text-slate-400 hover:text-violet-600 text-[10px] shrink-0 px-1"
+                  title="Preview"
+                >
+                  View
+                </button>
+                <button
+                  onClick={(e) => { e.preventDefault(); downloadDocx(r); }}
+                  className="text-slate-400 hover:text-emerald-600 text-[10px] shrink-0 px-1"
+                  title={`Download ${r.doc.name}`}
+                >
+                  <DownloadIcon />
+                </button>
+                <button
+                  onClick={(e) => { e.preventDefault(); void removeTailored(r.id); }}
+                  className="text-slate-400 hover:text-red-500 text-xs shrink-0 px-1"
+                  title="Remove"
+                >
+                  ✕
+                </button>
+              </label>
+            ))}
+          </div>
+          {selectedTailoredId && (
+            <p className="text-[10px] text-violet-600 dark:text-violet-400">
+              Tailored DOCX will be uploaded instead of your base resume.
+            </p>
+          )}
+        </div>
+      )}
 
       <details className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800/60 overflow-hidden shadow-sm ring-1 ring-slate-900/[0.02] dark:ring-white/[0.03]">
         <summary className="cursor-pointer select-none px-3 py-2.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 flex items-center gap-2 [&::-webkit-details-marker]:hidden">
@@ -272,7 +400,10 @@ export default function AgentPanel() {
         ) : (
           <>
             <button
-              onClick={() => start(profile, goal, jobDescription, autoSubmit)}
+              onClick={() => {
+                const tailored = tailoredResumes.find((r) => r.id === selectedTailoredId);
+                start(profile, goal, jobDescription, autoSubmit, tailored);
+              }}
               disabled={status === "waiting"}
               className="flex-1 rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-sm font-semibold py-2.5 shadow-md shadow-indigo-500/25 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
@@ -489,7 +620,44 @@ export default function AgentPanel() {
           </pre>
         </div>
       )}
+      {previewResume && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-slate-900">
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 shrink-0">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                {previewResume.jobTitle}{previewResume.company ? ` — ${previewResume.company}` : ""}
+              </div>
+              <div className="text-[10px] text-slate-400">{new Date(previewResume.createdAt).toLocaleDateString()}</div>
+            </div>
+            <button
+              onClick={() => downloadDocx(previewResume)}
+              className="rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-medium px-2.5 py-1.5 transition shrink-0"
+            >
+              Download DOCX
+            </button>
+            <button
+              onClick={() => setPreviewResume(null)}
+              className="rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs px-2.5 py-1.5 transition shrink-0"
+            >
+              Close
+            </button>
+          </div>
+          <pre className="flex-1 overflow-auto p-3 text-[11px] leading-relaxed text-slate-800 dark:text-slate-100 whitespace-pre-wrap font-mono">
+            {previewResume.tailoredProfile}
+          </pre>
+        </div>
+      )}
     </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
   );
 }
 

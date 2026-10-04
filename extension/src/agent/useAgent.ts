@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Action, ActionResult, PageState } from "@agauto/shared";
 import { captureAnnotatedScreenshot, clearHighlights, highlightFields, runAction, scanActiveTab } from "../lib/tab";
-import { getStoredDocument } from "../lib/storage";
+import { getStoredDocument, type TailoredResume } from "../lib/storage";
 import { getProfileText, textToFacts } from "../lib/profile";
 import { buildHints, matchFieldsToFacts } from "../lib/match";
 import { addHistory } from "../lib/history";
@@ -29,6 +29,7 @@ export function useAgent() {
   const lastState = useRef<PageState | null>(null);
   const sessionHost = useRef<string | null>(null);
   const autoSubmit = useRef(false);
+  const selectedTailored = useRef<TailoredResume | null>(null);
   const aborted = useRef(false);
   const paused = useRef(false);
   const resumeStep = useRef<EngineStep | null>(null);
@@ -87,7 +88,7 @@ export function useAgent() {
         for (const { toolCallId, action } of step.actions) {
           append(`→ ${describe(action)}`);
           try {
-            const result = await execute(action);
+            const result = await execute(action, selectedTailored.current);
             append(
               `   ${result.ok ? "✓" : "✗"}` +
                 (result.value !== undefined ? ` ${JSON.stringify(result.value)}` : "") +
@@ -185,7 +186,8 @@ export function useAgent() {
     profile: string,
     goal: string,
     jobDescription?: string,
-    autoSubmitEnabled = false
+    autoSubmitEnabled = false,
+    tailoredResume?: TailoredResume
   ) {
     setLog([]);
     setPending(null);
@@ -196,6 +198,7 @@ export function useAgent() {
     paused.current = false;
     resumeStep.current = null;
     autoSubmit.current = autoSubmitEnabled;
+    selectedTailored.current = tailoredResume ?? null;
     void clearHighlights().catch(() => {});
     try {
       append("scanning page…");
@@ -217,11 +220,11 @@ export function useAgent() {
       const screenshot = await tryScreenshot(pageState);
 
       engine.current.start({
-        profile,
+        profile: tailoredResume?.tailoredProfile ?? profile,
         goal,
         jobDescription,
         hints,
-        hasDocument: !!doc,
+        hasDocument: !!(doc || tailoredResume),
         pageState,
         screenshot,
       });
@@ -380,13 +383,14 @@ export function useAgent() {
     void clearHighlights().catch(() => {});
   }
 
-  return { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume, reset };
+  return { status, log, pending, start, answer, approve, reject, resumeFix, stop, pause, resume, reset, selectedTailored };
 }
 
-/** Execute an action — translating upload_document to an upload_file with stored bytes. */
-async function execute(action: Action): Promise<ActionResult> {
+/** Execute an action — translating upload_document to an upload_file with stored bytes.
+ *  Uses the user-selected tailored DOCX when set, falls back to the original document. */
+async function execute(action: Action, tailored?: TailoredResume | null): Promise<ActionResult> {
   if (action.type === "upload_document") {
-    const doc = await getStoredDocument();
+    const doc = tailored?.doc ?? (await getStoredDocument());
     if (!doc) {
       return {
         ok: false,
